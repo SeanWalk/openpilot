@@ -17,6 +17,15 @@ from opendbc.car.can_definitions import CanData, CanRecvCallable, CanSendCallabl
 from opendbc.car.carlog import carlog
 from opendbc.car.fw_versions import ObdCallback
 from opendbc.car.car_helpers import get_car, interfaces
+# --- 猴子補丁：強制偽裝車型 ---
+def patched_get_car(*args, **kwargs):
+    from opendbc.car.hyundai.values import CAR
+    # 強制回傳 Tucson 4 代、無錯誤、空字串、fuzzy 匹配
+    return CAR.TUCSON_4TH_GEN, None, "", [], "fuzzy", True
+
+# 用我們自訂的 patched_get_car 取代官方的 get_car
+get_car = patched_get_car
+# -----------------------------
 from opendbc.car.interfaces import CarInterfaceBase, RadarInterfaceBase
 from openpilot.selfdrive.pandad import can_capnp_to_list, can_list_to_can_capnp
 from openpilot.selfdrive.car.cruise import VCruiseHelper
