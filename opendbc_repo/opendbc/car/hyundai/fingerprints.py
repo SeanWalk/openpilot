@@ -1124,6 +1124,14 @@ FW_VERSIONS = {
       b'\xf1\x00NX4__               1.01 1.02 99110-N9000         ',
     ],
   },
+  CAR.HYUNDAI_MUFASA: {
+    (Ecu.fwdRadar, 0x7d0, None): [
+      b'\xf1\x00NU2_ RDR -----      1.00 1.00 99110-MA300         ',
+    ],
+    (Ecu.fwdCamera, 0x7c4, None): [
+      b'\xf1\x00NU2 MFC  AT EUR LHD 1.00 1.02 99211-MA300 230502',
+    ],
+  },
   CAR.HYUNDAI_SANTA_CRUZ_1ST_GEN: {
     (Ecu.fwdCamera, 0x7c4, None): [
       b'\xf1\x00NX4 FR_CMR AT USA LHD 1.00 1.00 99211-CW000 14M',

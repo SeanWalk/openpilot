@@ -184,6 +184,15 @@ class TestHyundaiCanfdLKASteeringAltEV(TestHyundaiCanfdBase):
   SCC_BUS = 1
   STEER_MSG = "LKAS_ALT"
   GAS_MSG = ("ACCELERATOR", "ACCELERATOR_PEDAL")
+
+  def test_alt_button_rx_check(self):
+    param = self.SAFETY_PARAM | HyundaiSafetyFlags.CANFD_ALT_BUTTONS
+    self.safety.set_safety_hooks(self.SAFETY_MODEL, param)
+    msg = self.packer.make_can_msg_safety("CRUISE_BUTTONS_ALT", self.PT_BUS, {
+      "CRUISE_BUTTONS": 0,
+      "ADAPTIVE_CRUISE_MAIN_BTN": 0,
+    })
+    self.assertTrue(self._rx(msg))
 class HyundaiCanfdLKASteeringAltButtonsMixin:
   def _button_msg(self, buttons, main_button=0, bus=None):
     values = {
@@ -234,6 +243,15 @@ class TestHyundaiCanfdLKASteeringLongEV(HyundaiLongitudinalBase, TestHyundaiCanf
   def _tx_acc_state_msg(self, enable):
     values = {"MainMode_ACC": enable}
     return self.packer.make_can_msg_safety("SCC_CONTROL", self.PT_BUS, values)
+
+  def test_alt_button_rx_check(self):
+    param = self.SAFETY_PARAM | HyundaiSafetyFlags.CANFD_ALT_BUTTONS
+    self.safety.set_safety_hooks(self.SAFETY_MODEL, param)
+    msg = self.packer.make_can_msg_safety("CRUISE_BUTTONS_ALT", self.PT_BUS, {
+      "CRUISE_BUTTONS": 0,
+      "ADAPTIVE_CRUISE_MAIN_BTN": 0,
+    })
+    self.assertTrue(self._rx(msg))
 # Tests longitudinal for ICE, hybrid, EV cars with LFA steering
 class TestHyundaiCanfdLFASteeringLongBase(HyundaiLongitudinalBase, TestHyundaiCanfdLFASteeringBase):
 

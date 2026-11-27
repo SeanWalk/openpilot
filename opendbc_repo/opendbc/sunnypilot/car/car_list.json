@@ -1853,6 +1853,19 @@
     ],
     "package": "No Smart Cruise Control (Non-SCC)"
   },
+  "Hyundai Mufasa (without HDA II) 2023-26": {
+    "platform": "HYUNDAI_MUFASA",
+    "make": "Hyundai",
+    "brand": "hyundai",
+    "model": "Mufasa (without HDA II)",
+    "year": [
+      "2023",
+      "2024",
+      "2025",
+      "2026"
+    ],
+    "package": "Smart Cruise Control (SCC)"
+  },
   "Hyundai Nexo 2021": {
     "platform": "HYUNDAI_NEXO_1ST_GEN",
     "make": "Hyundai",

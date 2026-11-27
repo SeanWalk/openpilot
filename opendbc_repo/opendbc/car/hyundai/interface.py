@@ -58,6 +58,9 @@ class CarInterface(CarInterfaceBase):
         ret.flags |= HyundaiFlags.CANFD_LKA_STEER_MSG.value
         if 0x110 in fingerprint[CAN.CAM]:
           ret.flags |= HyundaiFlags.CANFD_LKA_STEER_MSG_ALT.value
+        lfa_block_msg = 0x362 if ret.flags & HyundaiFlags.CANFD_LKA_STEER_MSG_ALT else 0x2a4
+        if lfa_block_msg in fingerprint[CAN.CAM]:
+          ret.flags |= HyundaiFlags.CANFD_LFA_SUPPRESS.value
       else:
         # no LKA steering
         if 0x1cf not in fingerprint[CAN.ECAN]:

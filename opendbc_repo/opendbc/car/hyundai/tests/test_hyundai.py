@@ -2,7 +2,7 @@ import unittest
 
 from opendbc.car import gen_empty_fingerprint
 from opendbc.car.structs import CarParams
-from opendbc.car.fw_versions import build_fw_dict
+from opendbc.car.fw_versions import build_fw_dict, match_fw_to_car
 from opendbc.car.hyundai.interface import CarInterface
 from opendbc.car.hyundai.hyundaicanfd import CanBus
 from opendbc.car.hyundai.radar_interface import RADAR_START_ADDR
@@ -54,6 +54,28 @@ def cars_with(flags):
 
 
 class TestHyundaiFingerprint(unittest.TestCase):
+  def test_mufasa_firmware_match_without_eps(self):
+    car_fw = [
+      CarParams.CarFw(ecu=Ecu.fwdRadar, address=0x7d0, brand="hyundai",
+                      fwVersion=b'\xf1\x00NU2_ RDR -----      1.00 1.00 99110-MA300         '),
+      CarParams.CarFw(ecu=Ecu.fwdRadar, address=0x7d0, brand="hyundai",
+                      fwVersion=b'\xf1\x8b #\x07\x16'),
+      CarParams.CarFw(ecu=Ecu.combinationMeter, address=0x7c6, brand="hyundai", fwVersion=b'\xf1\x002C6'),
+      CarParams.CarFw(ecu=Ecu.fwdCamera, address=0x7c4, brand="hyundai",
+                      fwVersion=b'\xf1\x00NU2 MFC  AT EUR LHD 1.00 1.02 99211-MA300 230502'),
+      CarParams.CarFw(ecu=Ecu.hvac, address=0x7b3, brand="hyundai",
+                      fwVersion=b'\xf1\x00NU2\x00\x00\x0097255-MA000UNIT-HEATER CONTROL\x001.00.11NU2DATC(-)0.1\xaa\xaa\xaa\xaa\xaa'),
+    ]
+    _, matches = match_fw_to_car(car_fw, "", allow_fuzzy=False, log=False)
+    assert matches == {CAR.HYUNDAI_MUFASA}
+
+    fingerprint = gen_empty_fingerprint()
+    fingerprint[CanBus(None, fingerprint).CAM] = [0x110]
+    CP = CarInterface.get_params(CAR.HYUNDAI_MUFASA, fingerprint, car_fw, False, False, False)
+    assert CP.pcmCruise
+    assert CP.flags & HyundaiFlags.CANFD
+    assert CP.flags & HyundaiFlags.CANFD_LKA_STEER_MSG
+
   def test_feature_detection(self):
     # LKA steering
     for lka_steering in (True, False):
@@ -71,6 +93,26 @@ class TestHyundaiFingerprint(unittest.TestCase):
         fingerprint[1][RADAR_START_ADDR] = 8
       CP = CarInterface.get_params(CAR.HYUNDAI_SONATA, fingerprint, [], False, False, False)
       assert CP.radarUnavailable != radar
+
+  def test_mufasa_alternate_cruise_buttons_with_lka(self):
+    fingerprint = gen_empty_fingerprint()
+    fingerprint[1][0x1aa] = 8  # CRUISE_BUTTONS_ALT on ECAN
+    fingerprint[2][0x110] = 8  # LKAS_ALT on camera CAN
+    CP = CarInterface.get_params(CAR.HYUNDAI_MUFASA, fingerprint, [], False, False, False)
+    CAN = CanBus(CP)
+    assert (CAN.ECAN, CAN.ACAN, CAN.CAM) == (1, 0, 2)
+    assert CP.flags & HyundaiFlags.CANFD_ALT_BUTTONS
+    assert CP.flags & HyundaiFlags.CANFD_LKA_STEER_MSG
+    assert CP.safetyConfigs[-1].safetyParam & HyundaiSafetyFlags.CANFD_LKA_STEER_MSG
+    assert CP.safetyConfigs[-1].safetyParam & HyundaiSafetyFlags.CANFD_ALT_BUTTONS
+    assert not CP.safetyConfigs[-1].safetyParam & HyundaiSafetyFlags.CAMERA_SCC
+    assert not CP.flags & HyundaiFlags.CANFD_LFA_SUPPRESS
+
+    # LFA suppression is enabled only when the camera block frame exists.
+    fingerprint[2][0x362] = 32
+    CP_WITH_SUPPRESS = CarInterface.get_params(CAR.HYUNDAI_MUFASA, fingerprint, [], False, False, False)
+    assert CP_WITH_SUPPRESS.flags & HyundaiFlags.CANFD_LFA_SUPPRESS
+    assert not CP_WITH_SUPPRESS.flags & (HyundaiFlags.HYBRID | HyundaiFlags.CLUSTER_GEARS)
 
   def test_alternate_limits(self):
     # Alternate lateral control limits, for high torque cars, verify Panda safety mode flag is set
