@@ -15,6 +15,7 @@ class HyundaiSafetyFlagsSP:
   HAS_LDA_BUTTON = 4
   NON_SCC = 8
   CCNC = 16
+  CANCEL_BTN_RESUME = 32
 
 
 class HyundaiFlagsSP(IntFlag):

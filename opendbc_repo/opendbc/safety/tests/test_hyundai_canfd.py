@@ -302,6 +302,48 @@ class TestHyundaiCanfdLFASteeringLongAltButtons(TestHyundaiCanfdLFASteeringLongB
     # Alt buttons does not use SCC_CONTROL to cancel if longitudinal
     pass
 
+  def test_cancel_btn_resume(self):
+    # Mufasa single-button Pause/Resume O-button (CANCEL_BTN_RESUME)
+    sp_param = HyundaiSafetyFlagsSP.LONG_MAIN_CRUISE_TOGGLEABLE | HyundaiSafetyFlagsSP.CANCEL_BTN_RESUME
+    libsafety_py.libsafety.set_current_safety_param_sp(sp_param)
+    try:
+      self.safety.set_safety_hooks(self.SAFETY_MODEL, self.SAFETY_PARAM)
+      self.safety.set_controls_allowed(False)
+
+      # Main cruise off: O-button press & release must not enable controls
+      self.assertTrue(self._rx(self._button_msg(4)))
+      self.assertFalse(self.safety.get_controls_allowed())
+      self.assertTrue(self._rx(self._button_msg(0)))
+      self.assertFalse(self.safety.get_controls_allowed())
+
+      # Enable main cruise (acc_main_on = true)
+      self.assertTrue(self._rx(self._button_msg(0, main_button=1)))
+      self.assertTrue(self._rx(self._button_msg(0, main_button=0)))
+      self.assertTrue(self.safety.get_acc_main_on())
+
+      # Paused standby: O-button press does not enable on rising edge, enables on falling edge
+      self.assertTrue(self._rx(self._button_msg(4)))
+      self.assertFalse(self.safety.get_controls_allowed())
+      self.assertTrue(self._rx(self._button_msg(0)))
+      self.assertTrue(self.safety.get_controls_allowed())
+
+      # Engaged: O-button press disengages immediately and release stays disengaged
+      self.assertTrue(self._rx(self._button_msg(4)))
+      self.assertFalse(self.safety.get_controls_allowed())
+      self.assertTrue(self._rx(self._button_msg(4)))
+      self.assertFalse(self.safety.get_controls_allowed())
+      self.assertTrue(self._rx(self._button_msg(0)))
+      self.assertFalse(self.safety.get_controls_allowed())
+      self.assertTrue(self.safety.get_acc_main_on())
+
+      # Paused standby again: O-button resumes on falling edge
+      self.assertTrue(self._rx(self._button_msg(4)))
+      self.assertFalse(self.safety.get_controls_allowed())
+      self.assertTrue(self._rx(self._button_msg(0)))
+      self.assertTrue(self.safety.get_controls_allowed())
+    finally:
+      self.safety.set_current_safety_param_sp(0)
+
 
 CAMERA_SCC_COMBOS = [c for c in ALL_GAS_EV_HYBRID_COMBOS if c["EXTRA_SAFETY_PARAM"] & HyundaiSafetyFlags.CAMERA_SCC]
 

@@ -71,6 +71,10 @@ class CarState(CarStateBase, EsccCarStateBase, MadsCarState, CarStateExt):
 
     self.params = CarControllerParams(CP)
 
+    # Hyundai Mufasa non-PCM Pause/Resume O-button (0x1AA btn=4) state tracking
+    self.mufasa_v_cruise_set = False
+    self.mufasa_o_btn_type = None
+
   def recent_button_interaction(self) -> bool:
     # On some newer model years, the CANCEL button acts as a pause/resume button based on the PCM state
     # To avoid re-engaging when openpilot cancels, check user engagement intention via buttons
@@ -308,6 +312,31 @@ class CarState(CarStateBase, EsccCarStateBase, MadsCarState, CarStateExt):
 
     if self.CP.openpilotLongitudinalControl:
       ret.cruiseState.available = self.get_main_cruise(ret)
+
+    if self.CP.carFingerprint == CAR.HYUNDAI_MUFASA and not self.CP.pcmCruise:
+      if not ret.cruiseState.available:
+        self.mufasa_v_cruise_set = False
+      elif ret.cruiseState.enabled:
+        self.mufasa_v_cruise_set = True
+
+      for ev in ret.buttonEvents:
+        if ev.type == ButtonType.cancel:
+          if ev.pressed:
+            if ret.cruiseState.enabled:
+              self.mufasa_o_btn_type = ButtonType.cancel
+            elif ret.cruiseState.available:
+              self.mufasa_o_btn_type = ButtonType.accelCruise if self.mufasa_v_cruise_set else ButtonType.decelCruise
+            else:
+              self.mufasa_o_btn_type = ButtonType.cancel
+            ev.type = self.mufasa_o_btn_type
+          else:
+            if self.mufasa_o_btn_type is not None:
+              ev.type = self.mufasa_o_btn_type
+              if self.mufasa_o_btn_type == ButtonType.decelCruise and ret.cruiseState.available:
+                self.mufasa_v_cruise_set = True
+              self.mufasa_o_btn_type = None
+        elif ev.type in (ButtonType.decelCruise, ButtonType.accelCruise) and not ev.pressed and ret.cruiseState.available:
+          self.mufasa_v_cruise_set = True
 
     CarStateExt.update_canfd_ext(self, ret, ret_sp, can_parsers, speed_factor)
 

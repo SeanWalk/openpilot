@@ -23,6 +23,7 @@ enum {
   HYUNDAI_PARAM_SP_HAS_LDA_BUTTON = 4,
   HYUNDAI_PARAM_SP_NON_SCC = 8,
   HYUNDAI_PARAM_SP_CCNC = 16,
+  HYUNDAI_PARAM_SP_CANCEL_BTN_RESUME = 32,
 };
 
 // common state
@@ -66,9 +67,13 @@ bool hyundai_non_scc = false;
 extern bool hyundai_ccnc;
 bool hyundai_ccnc = false;
 
+extern bool hyundai_cancel_btn_resume;
+bool hyundai_cancel_btn_resume = false;
+
 static uint8_t hyundai_last_button_interaction;  // button messages since the user pressed an enable button
 
 static bool main_button_prev;
+static bool cancel_press_disengaged;
 static bool acc_main_on_prev;
 static bool acc_main_on_tx;
 static uint32_t acc_main_on_mismatches;
@@ -95,10 +100,12 @@ void hyundai_common_init(uint16_t param) {
   hyundai_has_lda_button = GET_FLAG(current_safety_param_sp, HYUNDAI_PARAM_SP_HAS_LDA_BUTTON);
   hyundai_non_scc = GET_FLAG(current_safety_param_sp, HYUNDAI_PARAM_SP_NON_SCC);
   hyundai_ccnc = GET_FLAG(current_safety_param_sp, HYUNDAI_PARAM_SP_CCNC);
+  hyundai_cancel_btn_resume = GET_FLAG(current_safety_param_sp, HYUNDAI_PARAM_SP_CANCEL_BTN_RESUME);
 
   hyundai_last_button_interaction = HYUNDAI_PREV_BUTTON_SAMPLES;
 
   main_button_prev = false;
+  cancel_press_disengaged = false;
   acc_main_on_prev = false;
   acc_main_on_tx = false;
   acc_main_on_mismatches = 0U;
@@ -139,13 +146,31 @@ void hyundai_common_cruise_buttons_check(const int cruise_button, const bool mai
     // enter controls on falling edge of resume or set
     bool set = (cruise_button != HYUNDAI_BTN_SET) && (cruise_button_prev == HYUNDAI_BTN_SET);
     bool res = (cruise_button != HYUNDAI_BTN_RESUME) && (cruise_button_prev == HYUNDAI_BTN_RESUME);
-    if (set || res) {
+    bool cancel_rising = (cruise_button == HYUNDAI_BTN_CANCEL) && (cruise_button_prev != HYUNDAI_BTN_CANCEL);
+    bool cancel_falling = (cruise_button != HYUNDAI_BTN_CANCEL) && (cruise_button_prev == HYUNDAI_BTN_CANCEL);
+
+    if (cancel_rising) {
+      cancel_press_disengaged = controls_allowed;
+    }
+
+    // on cars with a single-button Pause/Resume O button (e.g. Mufasa), allow resume on falling edge
+    // when currently paused in standby (not engaged when pressed, and main cruise is active)
+    bool cancel_resume = hyundai_cancel_btn_resume && cancel_falling && !cancel_press_disengaged &&
+                         !controls_allowed && (!hyundai_longitudinal_main_cruise_toggleable || acc_main_on);
+
+    if (set || res || cancel_resume) {
       controls_allowed = true;
     }
 
     // exit controls on cancel press
     if (cruise_button == HYUNDAI_BTN_CANCEL) {
-      controls_allowed = false;
+      if (!hyundai_cancel_btn_resume || cancel_press_disengaged) {
+        controls_allowed = false;
+      }
+    }
+
+    if (cancel_falling) {
+      cancel_press_disengaged = false;
     }
 
     // toggle main cruise state on rising edge of main cruise button
@@ -153,7 +178,7 @@ void hyundai_common_cruise_buttons_check(const int cruise_button, const bool mai
       acc_main_on = !acc_main_on;
     }
 
-    if (set || res) {
+    if (set || res || cancel_resume) {
       heartbeat_engaged_mismatches = 0U;
     }
 

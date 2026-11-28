@@ -154,6 +154,13 @@ class CarInterface(CarInterfaceBase):
     if candidate == CAR.KIA_OPTIMA_G4_FL:
       ret.steerActuatorDelay = 0.2
 
+    if candidate == CAR.HYUNDAI_MUFASA:
+      # Measured ~0.65-0.80s brake actuator lag and ~30-35% steady-state decel deficit on road tests
+      ret.longitudinalActuatorDelay = 0.65
+      ret.stopAccel = -2.5
+      ret.longitudinalTuning.kiBP = [0., 5., 35.]
+      ret.longitudinalTuning.kiV = [0.35, 0.25, 0.15]
+
     # Dashcam cars are missing a test route, or otherwise need validation
     # TODO: Optima Hybrid 2017 uses a different SCC12 checksum
     if candidate in (CAR.KIA_OPTIMA_H,):
@@ -233,6 +240,9 @@ class CarInterface(CarInterfaceBase):
     if stock_cp.carFingerprint in (CAR.HYUNDAI_BAYON_1ST_GEN_NON_SCC, CAR.KIA_FORTE_2021_NON_SCC,
                                    CAR.KIA_SELTOS_2023_NON_SCC, CAR.GENESIS_G70_2021_NON_SCC):
       stock_cp.dashcamOnly = True
+
+    if stock_cp.carFingerprint == CAR.HYUNDAI_MUFASA and stock_cp.openpilotLongitudinalControl:
+      ret.safetyParam |= HyundaiSafetyFlagsSP.CANCEL_BTN_RESUME
 
     ret.intelligentCruiseButtonManagementAvailable = not (stock_cp.flags & HyundaiFlags.CANFD_ALT_BUTTONS)
 

@@ -29,6 +29,9 @@ TUNING_CONFIGS = {
 
 # Car-specific configs
 CAR_SPECIFIC_CONFIGS = {
+  CAR.HYUNDAI_MUFASA: CarTuningConfig(
+    longitudinal_actuator_delay=0.65,
+  ),
   CAR.KIA_NIRO_EV: CarTuningConfig(
     jerk_limits=3.3,
   ),

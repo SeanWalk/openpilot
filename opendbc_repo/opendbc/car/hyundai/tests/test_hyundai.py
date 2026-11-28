@@ -1,16 +1,20 @@
 import unittest
 
-from opendbc.car import gen_empty_fingerprint
+from opendbc.can import CANPacker
+from opendbc.car import Bus, gen_empty_fingerprint, structs
 from opendbc.car.structs import CarParams
 from opendbc.car.fw_versions import build_fw_dict, match_fw_to_car
+from opendbc.car.hyundai.carstate import CarState
 from opendbc.car.hyundai.interface import CarInterface
 from opendbc.car.hyundai.hyundaicanfd import CanBus
 from opendbc.car.hyundai.radar_interface import RADAR_START_ADDR
-from opendbc.car.hyundai.values import CAR, DATE_FW_ECUS, \
+from opendbc.car.hyundai.values import CAR, DBC, DATE_FW_ECUS, Buttons, \
                                          FW_QUERY_CONFIG, CANFD_FUZZY_WHITELIST, \
                                          PLATFORM_CODE_ECUS, HYUNDAI_VERSION_REQUEST_LONG, \
                                          HyundaiFlags, get_platform_codes, HyundaiSafetyFlags, \
                                          NON_SCC_CAR
+from opendbc.sunnypilot.car.hyundai.longitudinal.helpers import get_longitudinal_tune
+from opendbc.sunnypilot.car.hyundai.values import HyundaiFlagsSP, HyundaiSafetyFlagsSP
 from opendbc.car.hyundai.fingerprints import FW_VERSIONS
 from opendbc.testing import fuzzy_test
 
@@ -113,6 +117,94 @@ class TestHyundaiFingerprint(unittest.TestCase):
     CP_WITH_SUPPRESS = CarInterface.get_params(CAR.HYUNDAI_MUFASA, fingerprint, [], False, False, False)
     assert CP_WITH_SUPPRESS.flags & HyundaiFlags.CANFD_LFA_SUPPRESS
     assert not CP_WITH_SUPPRESS.flags & (HyundaiFlags.HYBRID | HyundaiFlags.CLUSTER_GEARS)
+
+  def test_mufasa_longitudinal_tuning_and_o_button(self):
+    fingerprint = gen_empty_fingerprint()
+    fingerprint[0][0x1aa] = 8  # CRUISE_BUTTONS_ALT on ECAN (LFA steering)
+    CP = CarInterface.get_params(CAR.HYUNDAI_MUFASA, fingerprint, [], True, False, False)
+    CP_SP = CarInterface.get_params_sp(CP, CAR.HYUNDAI_MUFASA, fingerprint, [], True, False, False)
+    CP_SP.flags |= HyundaiFlagsSP.LONGITUDINAL_MAIN_CRUISE_TOGGLEABLE.value
+
+    assert CP.openpilotLongitudinalControl
+    assert not CP.pcmCruise
+    self.assertAlmostEqual(CP.longitudinalActuatorDelay, 0.65, places=5)
+    self.assertAlmostEqual(CP.stopAccel, -2.5, places=5)
+    assert list(CP.longitudinalTuning.kiBP) == [0., 5., 35.]
+    for actual, expected in zip(CP.longitudinalTuning.kiV, [0.35, 0.25, 0.15], strict=True):
+      self.assertAlmostEqual(actual, expected, places=5)
+    assert CP_SP.safetyParam & HyundaiSafetyFlagsSP.CANCEL_BTN_RESUME
+
+    # Dynamic/Predictive tuning helper must preserve Mufasa's 0.65s actuator delay
+    get_longitudinal_tune(CP)
+    self.assertAlmostEqual(CP.longitudinalActuatorDelay, 0.65, places=5)
+
+    # Stock longitudinal should not enable CANCEL_BTN_RESUME
+    CP_STOCK = CarInterface.get_params(CAR.HYUNDAI_MUFASA, fingerprint, [], False, False, False)
+    CP_STOCK_SP = CarInterface.get_params_sp(CP_STOCK, CAR.HYUNDAI_MUFASA, fingerprint, [], False, False, False)
+    assert not (CP_STOCK_SP.safetyParam & HyundaiSafetyFlagsSP.CANCEL_BTN_RESUME)
+
+    # Test Mufasa O-button (0x1AA btn=4) Pause/Resume state machine
+    CS = CarState(CP, CP_SP)
+    parsers = CS.get_can_parsers(CP, CP_SP)
+    packer = CANPacker(DBC[CAR.HYUNDAI_MUFASA][Bus.pt])
+    ButtonType = structs.CarState.ButtonEvent.Type
+
+    t = 0
+    def step(cruise_btn=Buttons.NONE, main_btn=0, acc_req=0):
+      nonlocal t
+      t += 10_000_000
+      msgs = [
+        packer.make_can_msg("TCS", 0, {"ACCEnable": 0, "ACC_REQ": acc_req}),
+        packer.make_can_msg("CRUISE_BUTTONS_ALT", 0, {
+          "CRUISE_BUTTONS": cruise_btn,
+          "ADAPTIVE_CRUISE_MAIN_BTN": main_btn,
+        }),
+      ]
+      parsers[Bus.pt].update([(t, msgs)])
+      parsers[Bus.cam].update([(t, [])])
+      ret, _ = CS.update(parsers)
+      return ret
+
+    # Initial frame: main cruise off (available=False)
+    ret = step()
+    assert not ret.cruiseState.available
+
+    # O-button while main cruise off -> cancel
+    ret = step(cruise_btn=Buttons.CANCEL)
+    assert [(e.type, e.pressed) for e in ret.buttonEvents] == [(ButtonType.cancel, True)]
+    ret = step(cruise_btn=Buttons.NONE)
+    assert [(e.type, e.pressed) for e in ret.buttonEvents] == [(ButtonType.cancel, False)]
+
+    # Press mainCruise -> enters standby (available=True, enabled=False)
+    ret = step(main_btn=1)
+    assert ret.cruiseState.available and not ret.cruiseState.enabled
+    step(main_btn=0)
+
+    # O-button while paused standby with unset speed -> decelCruise (set current speed)
+    ret = step(cruise_btn=Buttons.CANCEL)
+    assert [(e.type, e.pressed) for e in ret.buttonEvents] == [(ButtonType.decelCruise, True)]
+    ret = step(cruise_btn=Buttons.NONE)
+    assert [(e.type, e.pressed) for e in ret.buttonEvents] == [(ButtonType.decelCruise, False)]
+
+    # Now engaged (ACC_REQ=1): O-button press disengages with cancel, and stays cancel on release even after ACC_REQ drops
+    ret = step(acc_req=1)
+    assert ret.cruiseState.available and ret.cruiseState.enabled
+    ret = step(cruise_btn=Buttons.CANCEL, acc_req=1)
+    assert [(e.type, e.pressed) for e in ret.buttonEvents] == [(ButtonType.cancel, True)]
+    ret = step(cruise_btn=Buttons.NONE, acc_req=0)
+    assert [(e.type, e.pressed) for e in ret.buttonEvents] == [(ButtonType.cancel, False)]
+    assert ret.cruiseState.available and not ret.cruiseState.enabled
+
+    # Now paused standby with speed already set -> O-button resumes with accelCruise
+    ret = step(cruise_btn=Buttons.CANCEL, acc_req=0)
+    assert [(e.type, e.pressed) for e in ret.buttonEvents] == [(ButtonType.accelCruise, True)]
+    ret = step(cruise_btn=Buttons.NONE, acc_req=0)
+    assert [(e.type, e.pressed) for e in ret.buttonEvents] == [(ButtonType.accelCruise, False)]
+
+    # Press mainCruise again -> turns main cruise off and resets stored speed state
+    ret = step(main_btn=1, acc_req=0)
+    assert not ret.cruiseState.available
+    assert not CS.mufasa_v_cruise_set
 
   def test_alternate_limits(self):
     # Alternate lateral control limits, for high torque cars, verify Panda safety mode flag is set
