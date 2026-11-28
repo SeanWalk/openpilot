@@ -214,7 +214,12 @@ class Car:
       self.v_cruise_helper.initialize_v_cruise(self.CS_prev, self.initial_cruise_speed)
 
     # TODO: mirror the carState.cruiseState struct?
-    CS.vCruise = float(self.v_cruise_helper.v_cruise_kph)
+    v_cruise_kph = float(self.v_cruise_helper.v_cruise_kph)
+    if self.CP.carFingerprint == "HYUNDAI_MUFASA" and not self.CP.pcmCruise and self.v_cruise_helper.v_cruise_initialized:
+      # Map cluster set speed to true target speed so Mufasa's dashboard matches the configured set speed
+      # Measured across 20-120 km/h: v_cluster_kph ~= 1.0162 * vEgo_kph + 2.40 (with wheelSpeedFactor=1.012)
+      v_cruise_kph = max(0.0, (v_cruise_kph - 2.40) / 1.0162)
+    CS.vCruise = v_cruise_kph
     CS.vCruiseCluster = float(self.v_cruise_helper.v_cruise_cluster_kph)
 
     return CS, CS_SP, RD

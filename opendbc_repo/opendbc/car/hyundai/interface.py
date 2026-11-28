@@ -155,6 +155,8 @@ class CarInterface(CarInterfaceBase):
       ret.steerActuatorDelay = 0.2
 
     if candidate == CAR.HYUNDAI_MUFASA:
+      # Calibrated against GPS across 20-120 km/h (WHEEL_SPEEDS under-reads true speed by ~1.2%)
+      ret.wheelSpeedFactor = 1.012
       # Measured ~0.65-0.80s brake actuator lag and ~30-35% steady-state decel deficit on road tests
       ret.longitudinalActuatorDelay = 0.65
       ret.stopAccel = -2.5

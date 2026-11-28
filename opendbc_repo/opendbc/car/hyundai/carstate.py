@@ -253,6 +253,10 @@ class CarState(CarStateBase, EsccCarStateBase, MadsCarState, CarStateExt):
     ret.standstill = cp.vl["WHEEL_SPEEDS"]["WHL_SpdFLVal"] <= STANDSTILL_THRESHOLD and cp.vl["WHEEL_SPEEDS"]["WHL_SpdFRVal"] <= STANDSTILL_THRESHOLD and \
                      cp.vl["WHEEL_SPEEDS"]["WHL_SpdRLVal"] <= STANDSTILL_THRESHOLD and cp.vl["WHEEL_SPEEDS"]["WHL_SpdRRVal"] <= STANDSTILL_THRESHOLD
 
+    if self.CP.carFingerprint == CAR.HYUNDAI_MUFASA:
+      # 0x1AA (CRUISE_BUTTONS_ALT / CLU_01_20ms) BYTE8 is the instrument cluster display speed (0-255, matching DISTANCE_UNIT)
+      ret.vEgoCluster = cp.vl["CRUISE_BUTTONS_ALT"]["BYTE8"] * speed_factor
+
     ret.steeringRateDeg = cp.vl["STEERING_SENSORS"]["STEERING_RATE"]
     ret.steeringAngleDeg = cp.vl["STEERING_SENSORS"]["STEERING_ANGLE"]
     ret.steeringTorque = cp.vl["MDPS"]["MDPS_StrTqSnsrVal"]

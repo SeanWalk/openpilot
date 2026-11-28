@@ -127,6 +127,7 @@ class TestHyundaiFingerprint(unittest.TestCase):
 
     assert CP.openpilotLongitudinalControl
     assert not CP.pcmCruise
+    self.assertAlmostEqual(CP.wheelSpeedFactor, 1.012, places=5)
     self.assertAlmostEqual(CP.longitudinalActuatorDelay, 0.65, places=5)
     self.assertAlmostEqual(CP.stopAccel, -2.5, places=5)
     assert list(CP.longitudinalTuning.kiBP) == [0., 5., 35.]
@@ -150,7 +151,7 @@ class TestHyundaiFingerprint(unittest.TestCase):
     ButtonType = structs.CarState.ButtonEvent.Type
 
     t = 0
-    def step(cruise_btn=Buttons.NONE, main_btn=0, acc_req=0):
+    def step(cruise_btn=Buttons.NONE, main_btn=0, acc_req=0, cluster_kph=0):
       nonlocal t
       t += 10_000_000
       msgs = [
@@ -158,6 +159,7 @@ class TestHyundaiFingerprint(unittest.TestCase):
         packer.make_can_msg("CRUISE_BUTTONS_ALT", 0, {
           "CRUISE_BUTTONS": cruise_btn,
           "ADAPTIVE_CRUISE_MAIN_BTN": main_btn,
+          "BYTE8": cluster_kph,
         }),
       ]
       parsers[Bus.pt].update([(t, msgs)])
@@ -165,9 +167,11 @@ class TestHyundaiFingerprint(unittest.TestCase):
       ret, _ = CS.update(parsers)
       return ret
 
-    # Initial frame: main cruise off (available=False)
-    ret = step()
+    # Prime dynamic CANParser on frame 0, then verify 0x1AA BYTE8 -> vEgoCluster
+    step()
+    ret = step(cluster_kph=115)
     assert not ret.cruiseState.available
+    self.assertAlmostEqual(ret.vEgoCluster * 3.6, 115.0, places=3)
 
     # O-button while main cruise off -> cancel
     ret = step(cruise_btn=Buttons.CANCEL)
